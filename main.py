@@ -10,9 +10,9 @@ from telegram.request import HTTPXRequest
 import yt_dlp
 
 # ----------------------------------------------------
-# 1. إعدادات السيرفر والبوت
+# 1. إعدادات السيرفر والبوت (جلب التوكين بأمان)
 # ----------------------------------------------------
-BOT_TOKEN = "8294576614:AAHWGU7AQntnN9eZX_8aTyTo7oDwMOhYJWU"
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8294576614:AAHZDyHZ5mtC3rU6RpsSfvB9lX0oiGKZ9bY")
 app = Flask(__name__)
 
 # تصميم واجهة الموقع بـ HTML & CSS (مع معلومات المطور وزر الواتساب وتحديد الجودة)
@@ -109,7 +109,6 @@ def web_download():
     file_path = "web_download.mp3" if fmt == 'audio' else "web_download.mp4"
 
     try:
-        # معالجة تيك توك عبر API لتجاوز القيود
         if "tiktok.com" in url:
             api_url = f"https://api.tiklydown.eu.org/api/download?url={url}"
             req = urllib.request.Request(api_url, headers={'User-Agent': 'Mozilla/5.0'})
@@ -121,7 +120,6 @@ def web_download():
             with urllib.request.urlopen(v_req, timeout=30) as v_resp, open(file_path, 'wb') as f:
                 f.write(v_resp.read())
         else:
-            # معالجة باقي المواقع (يوتيوب، انستغرام...) حسب الجودة المختارة
             if fmt == 'audio':
                 opts = {'format': 'bestaudio/best', 'outtmpl': file_path, 'quiet': True}
             elif fmt == 'video_mid':
@@ -139,7 +137,10 @@ def web_download():
 
     finally:
         if os.path.exists(file_path):
-            pass # يمسح بعد الإرسال تلقائياً في النظام
+            try:
+                os.remove(file_path)
+            except:
+                pass
 
 # ----------------------------------------------------
 # 3. خدمات بوت التليجرام (Telegram Bot Logic)
@@ -200,4 +201,5 @@ if __name__ == '__main__':
     
     # 2. تشغيل خادم الموقع الرئيسي
     port = int(os.environ.get("PORT", 8080))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=port, use_reloader=False)
+
