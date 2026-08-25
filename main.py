@@ -1,5 +1,7 @@
 import os
 import asyncio
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import threading
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram.request import HTTPXRequest
@@ -7,6 +9,19 @@ import yt_dlp
 
 BOT_TOKEN = "8294576614:AAHWGU7AQntnN9eZX_8aTyTo7oDwMOhYJWU"
 
+# خادم ويب وهمي لإبقاء الخطة المجانية شغالة على Render
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is alive!")
+
+def run_health_check_server():
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
+    server.serve_forever()
+
+# أجزاء البوت وتحميل الفيديوهات
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("أهلاً بك! أرسل لي رابط فيديو من (TikTok, Instagram, YouTube...) لتحميله فوراً.")
 
@@ -44,6 +59,9 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
             os.remove(file_path)
 
 if __name__ == '__main__':
+    # تشغيل سيرفر الويب في الخلفية
+    threading.Thread(target=run_health_check_server, daemon=True).start()
+    
     request = HTTPXRequest(connect_timeout=30.0, read_timeout=30.0)
     app = ApplicationBuilder().token(BOT_TOKEN).request(request).build()
     
