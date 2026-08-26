@@ -31,23 +31,12 @@ HTML_LAYOUT = """
         .input-group { position: relative; margin-top: 15px; }
         .input-group input { width: 100%; padding: 14px; border-radius: 10px; border: 1px solid var(--border); background: #0f172a; color: white; font-size: 15px; }
         .btn-main { width: 100%; padding: 14px; border-radius: 10px; border: none; background: var(--accent); color: white; font-weight: bold; font-size: 16px; cursor: pointer; margin-top: 15px; }
-</style>
+    </style>
 </head>
 <body>
 <div class="container">
     <div class="card">
         <h2 style="text-align:center;">مُنزّل الفيديوهات الذكي</h2>
-        
-        <!-- قسم الاسم والتواصل -->
-        <div style="text-align: center; margin-bottom: 20px; font-size: 14px; color: #666; display: flex; align-items: center; justify-content: center; gap: 8px;">
-            <span>تطوير: <strong>كهلان الأشول</strong></span>
-            <a href="https://wa.me/" target="_blank" title="تواصل عبر واتساب" style="color: #25D366; text-decoration: none; display: inline-flex; align-items: center;">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981z"/>
-                </svg>
-            </a>
-        </div>
-
         <form action="/download-web" method="post">
             <div class="input-group">
                 <input type="url" name="url" placeholder="ألصق رابط الفيديو هنا..." required>
@@ -58,7 +47,7 @@ HTML_LAYOUT = """
 </div>
 </body>
 </html>
-
+"""
 
 @app.route('/')
 def index():
@@ -196,3 +185,4 @@ bot_thread.start()
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
+
