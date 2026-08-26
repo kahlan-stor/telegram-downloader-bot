@@ -6,7 +6,7 @@ import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # ----------------------------------------------------
-# 1. الإعدادات وتطبيق Flask
+# 1. إعداد التوكن وتطبيق Flask
 # ----------------------------------------------------
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8294576614:AAHZDyHZ5mtC3rU6RpsSfvB9lX0oiGKZ9bY")
 bot = telebot.TeleBot(BOT_TOKEN)
@@ -71,11 +71,11 @@ def web_download():
             except: pass
 
 # ----------------------------------------------------
-# 2. منطق بوت التليجرام
+# 2. منطق بوت التليجرام (اختيار الدقة بدون ffmpeg)
 # ----------------------------------------------------
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    bot.reply_to(message, "أهلاً بك! أرسل لي رابط الفيديو لتحديد الدقة والتنزيل فوراً 🎬")
+    bot.reply_to(message, "أهلاً بك! 🎬 أرسل لي رابط الفيديو لتحديد الدقة المطلوب تنزيلها.")
 
 @bot.message_handler(func=lambda message: True)
 def process_video_link(message):
@@ -84,7 +84,7 @@ def process_video_link(message):
         bot.reply_to(message, "⚠️ يرجى إرسال رابط صحيح يبدأ بـ http أو https.")
         return
 
-    msg = bot.reply_to(message, "🔍 جاري تحليل الرابط وجلب الدقات المتاحة...")
+    msg = bot.reply_to(message, "🔍 جاري تحليل الرابط واستخراج الدقات المتاحة...")
 
     try:
         ydl_opts = {'quiet': True}
@@ -100,7 +100,7 @@ def process_video_link(message):
             vcodec = f.get('vcodec')
             acodec = f.get('acodec')
 
-            # فلترة الجودات التي تحتوي على فيديو وصوت معاً لتفادي الحاجة لـ ffmpeg
+            # اختيار الجودات المدموجة مسبقاً تفادياً لطلب ffmpeg
             if height and vcodec != 'none' and acodec != 'none':
                 if height not in seen_heights:
                     seen_heights.add(height)
@@ -150,7 +150,7 @@ def callback_download(call):
         'format': fmt_str,
         'outtmpl': file_path,
         'quiet': True,
-        'max_filesize': 50 * 1024 * 1024
+        'max_filesize': 50 * 1024 * 1024  # الحد الأقصى 50 ميجابايت للتلجرام
     }
 
     try:
@@ -171,13 +171,20 @@ def callback_download(call):
             try: os.remove(file_path)
             except: pass
 
+# ----------------------------------------------------
+# 3. تشغيل البوت والخادم
+# ----------------------------------------------------
 def start_bot():
-    bot.infinity_polling(skip_pending_updates=True)
+    try:
+        print("🤖 جاري تشغيل بوت التليجرام...")
+        bot.infinity_polling(skip_pending_updates=True)
+    except Exception as e:
+        print(f"❌ خطأ في تشغيل البوت: {e}")
+
+bot_thread = threading.Thread(target=start_bot, daemon=True)
+bot_thread.start()
 
 if __name__ == '__main__':
-    # تشغيل البوت في خيط خلفي
-    threading.Thread(target=start_bot, daemon=True).start()
-    
-    # تشغيل تطبيق Flask
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
+
