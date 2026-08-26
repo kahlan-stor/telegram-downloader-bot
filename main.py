@@ -12,7 +12,6 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN", "8294576614:AAHZDyHZ5mtC3rU6RpsSfvB9lX0o
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
 
-# تخزين الروابط مؤقتاً حسب آيدي المستخدم
 user_urls = {}
 
 HTML_LAYOUT = """
@@ -71,7 +70,7 @@ def web_download():
             except: pass
 
 # ----------------------------------------------------
-# 2. منطق بوت التليجرام (اختيار الدقة بدون ffmpeg)
+# 2. منطق بوت التليجرام
 # ----------------------------------------------------
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
@@ -100,7 +99,6 @@ def process_video_link(message):
             vcodec = f.get('vcodec')
             acodec = f.get('acodec')
 
-            # اختيار الجودات المدموجة مسبقاً تفادياً لطلب ffmpeg
             if height and vcodec != 'none' and acodec != 'none':
                 if height not in seen_heights:
                     seen_heights.add(height)
@@ -140,7 +138,7 @@ def callback_download(call):
 
     data = call.data
     if data == "best":
-        fmt_str = "best[ext=mp4]/best"
+        fmt_str = "best[ext=mp4]/bestvideo+bestaudio/best"
     else:
         fmt_id = data.replace("fmt_", "")
         fmt_str = f"{fmt_id}/best[ext=mp4]/best"
@@ -150,7 +148,7 @@ def callback_download(call):
         'format': fmt_str,
         'outtmpl': file_path,
         'quiet': True,
-        'max_filesize': 50 * 1024 * 1024  # الحد الأقصى 50 ميجابايت للتلجرام
+        'max_filesize': 50 * 1024 * 1024
     }
 
     try:
@@ -172,12 +170,12 @@ def callback_download(call):
             except: pass
 
 # ----------------------------------------------------
-# 3. تشغيل البوت والخادم
+# 3. تشغيل البوت (تم إصلاح المعامل هنا)
 # ----------------------------------------------------
 def start_bot():
     try:
         print("🤖 جاري تشغيل بوت التليجرام...")
-        bot.infinity_polling(skip_pending_updates=True)
+        bot.infinity_polling(skip_pending=True, timeout=20, long_polling_timeout=10)
     except Exception as e:
         print(f"❌ خطأ في تشغيل البوت: {e}")
 
@@ -187,4 +185,3 @@ bot_thread.start()
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
-
