@@ -5,12 +5,10 @@ ENV PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /app
 
-# FFmpeg
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        ffmpeg \
        ca-certificates \
-       curl \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
