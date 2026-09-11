@@ -1,188 +1,824 @@
 import os
+import re
+import uuid
 import threading
+import shutil
+from pathlib import Path
+
 from flask import Flask, render_template_string, request, send_file
 import yt_dlp
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# ----------------------------------------------------
-# 1. إعداد التوكن وتطبيق Flask
-# ----------------------------------------------------
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8294576614:AAHZDyHZ5mtC3rU6RpsSfvB9lX0oiGKZ9bY")
+
+# =========================================================
+# 🔑 توكن البوت
+# =========================================================
+# احذف كلمة "توكن" وضع التوكن الحقيقي مكانها
+BOT_TOKEN = "توكن"
+
+
+# =========================================================
+# ⚙️ الإعدادات
+# =========================================================
+MAX_FILE_SIZE = 49 * 1024 * 1024
+DOWNLOAD_DIR = Path("downloads")
+DOWNLOAD_DIR.mkdir(exist_ok=True)
+
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
 
-user_urls = {}
+# حفظ الرابط لكل مستخدم
+user_sessions = {}
 
+
+# =========================================================
+# 🌐 واجهة الويب
+# =========================================================
 HTML_LAYOUT = """
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>مُنزّل الفيديوهات الذكي</title>
-    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
-    <style>
-        :root { --bg-color: #0f172a; --card-bg: #1e293b; --accent: #3b82f6; --text: #f8fafc; --border: #334155; }
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Tajawal', sans-serif; }
-        body { background: var(--bg-color); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 20px; }
-        .container { width: 100%; max-width: 600px; margin-top: 40px; }
-        .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 16px; padding: 25px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
-        .input-group { position: relative; margin-top: 15px; }
-        .input-group input { width: 100%; padding: 14px; border-radius: 10px; border: 1px solid var(--border); background: #0f172a; color: white; font-size: 15px; }
-        .btn-main { width: 100%; padding: 14px; border-radius: 10px; border: none; background: var(--accent); color: white; font-weight: bold; font-size: 16px; cursor: pointer; margin-top: 15px; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>مُنزّل الفيديوهات الذكي</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
+
+<style>
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: 'Tajawal', sans-serif;
+    min-height: 100vh;
+    background:
+        radial-gradient(circle at top right, #243b73 0, transparent 35%),
+        radial-gradient(circle at bottom left, #172554 0, transparent 35%),
+        #070b16;
+    color: #fff;
+    padding: 20px;
+}
+
+.container {
+    width: 100%;
+    max-width: 680px;
+    margin: 45px auto;
+}
+
+.logo {
+    width: 80px;
+    height: 80px;
+    margin: 0 auto 18px;
+    border-radius: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 38px;
+    background: linear-gradient(135deg, #2563eb, #7c3aed);
+    box-shadow: 0 15px 45px rgba(37,99,235,.35);
+}
+
+h1 {
+    text-align: center;
+    font-size: 28px;
+    margin-bottom: 8px;
+}
+
+.subtitle {
+    text-align: center;
+    color: #94a3b8;
+    margin-bottom: 25px;
+}
+
+.card {
+    background: rgba(15, 23, 42, .82);
+    border: 1px solid rgba(148,163,184,.15);
+    border-radius: 24px;
+    padding: 25px;
+    backdrop-filter: blur(20px);
+    box-shadow: 0 25px 70px rgba(0,0,0,.35);
+}
+
+label {
+    display: block;
+    margin-bottom: 9px;
+    color: #cbd5e1;
+    font-weight: 700;
+}
+
+input {
+    width: 100%;
+    height: 56px;
+    padding: 0 17px;
+    border-radius: 15px;
+    border: 1px solid #334155;
+    outline: none;
+    background: #080d19;
+    color: white;
+    font-size: 15px;
+    direction: ltr;
+}
+
+input:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59,130,246,.12);
+}
+
+button {
+    width: 100%;
+    height: 56px;
+    margin-top: 15px;
+    border: 0;
+    border-radius: 15px;
+    color: white;
+    font-family: inherit;
+    font-size: 16px;
+    font-weight: 800;
+    cursor: pointer;
+    background: linear-gradient(135deg, #2563eb, #7c3aed);
+    transition: .2s;
+}
+
+button:hover {
+    transform: translateY(-2px);
+}
+
+.features {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-top: 20px;
+}
+
+.feature {
+    padding: 15px;
+    border-radius: 16px;
+    background: rgba(30,41,59,.65);
+    border: 1px solid rgba(148,163,184,.1);
+    text-align: center;
+    color: #cbd5e1;
+}
+
+.feature strong {
+    display: block;
+    color: white;
+    margin-bottom: 5px;
+}
+
+.footer {
+    text-align: center;
+    color: #64748b;
+    margin-top: 20px;
+    font-size: 13px;
+}
+
+@media(max-width:500px) {
+    .container {
+        margin-top: 20px;
+    }
+
+    .card {
+        padding: 18px;
+    }
+
+    h1 {
+        font-size: 24px;
+    }
+}
+
+</style>
 </head>
+
 <body>
+
 <div class="container">
+
+    <div class="logo">🎬</div>
+
+    <h1>مُنزّل الفيديوهات الذكي</h1>
+
+    <p class="subtitle">
+        حمّل الفيديو أو الصوت بسهولة وبأفضل جودة متاحة
+    </p>
+
     <div class="card">
-        <h2 style="text-align:center;">مُنزّل الفيديوهات الذكي</h2>
+
         <form action="/download-web" method="post">
-            <div class="input-group">
-                <input type="url" name="url" placeholder="ألصق رابط الفيديو هنا..." required>
-            </div>
-            <button type="submit" class="btn-main">تنزيل الفيديو</button>
+
+            <label>🔗 رابط الفيديو</label>
+
+            <input
+                type="url"
+                name="url"
+                placeholder="https://..."
+                required
+            >
+
+            <button type="submit">
+                ⬇️ تنزيل الفيديو
+            </button>
+
         </form>
+
+        <div class="features">
+
+            <div class="feature">
+                <strong>🎬 فيديو</strong>
+                جودة متعددة
+            </div>
+
+            <div class="feature">
+                <strong>🎵 صوت</strong>
+                MP3
+            </div>
+
+            <div class="feature">
+                <strong>⚡ سريع</strong>
+                تحميل مباشر
+            </div>
+
+            <div class="feature">
+                <strong>📱 جوال</strong>
+                تصميم متجاوب
+            </div>
+
+        </div>
+
     </div>
+
+    <div class="footer">
+        يعمل بواسطة yt-dlp
+    </div>
+
 </div>
+
 </body>
 </html>
 """
 
-@app.route('/')
+
+# =========================================================
+# 🌐 الصفحة الرئيسية
+# =========================================================
+@app.route("/")
 def index():
     return render_template_string(HTML_LAYOUT)
 
-@app.route('/download-web', methods=['POST'])
+
+# =========================================================
+# 🌐 تحميل من الموقع
+# =========================================================
+@app.route("/download-web", methods=["POST"])
 def web_download():
-    url = request.form.get('url', '').strip()
-    file_path = "web_download.mp4"
+
+    url = request.form.get("url", "").strip()
+
+    if not url.startswith(("http://", "https://")):
+        return "❌ الرابط غير صحيح"
+
+    file_id = uuid.uuid4().hex
+    output = DOWNLOAD_DIR / f"{file_id}.%(ext)s"
+
     try:
-        opts = {'format': 'best[ext=mp4]/best', 'outtmpl': file_path, 'quiet': True}
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            ydl.download([url])
-        return send_file(file_path, as_attachment=True)
+
+        options = {
+            "format": "bestvideo+bestaudio/best",
+            "merge_output_format": "mp4",
+            "outtmpl": str(output),
+            "quiet": True,
+            "noplaylist": True,
+        }
+
+        with yt_dlp.YoutubeDL(options) as ydl:
+            info = ydl.extract_info(url, download=True)
+            final_path = Path(
+                ydl.prepare_filename(info)
+            )
+
+            if not final_path.exists():
+
+                candidates = list(
+                    DOWNLOAD_DIR.glob(f"{file_id}.*")
+                )
+
+                if not candidates:
+                    return "❌ لم يتم إنشاء الملف"
+
+                final_path = candidates[0]
+
+        return send_file(
+            final_path,
+            as_attachment=True,
+            download_name=final_path.name
+        )
+
     except Exception as e:
-        return f"❌ حدث خطأ: {str(e)}"
+        return f"❌ حدث خطأ أثناء التحميل:<br><br>{str(e)}"
+
     finally:
-        if os.path.exists(file_path):
-            try: os.remove(file_path)
-            except: pass
 
-# ----------------------------------------------------
-# 2. منطق بوت التليجرام
-# ----------------------------------------------------
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
-    bot.reply_to(message, "أهلاً بك! 🎬 أرسل لي رابط الفيديو لتحديد الدقة المطلوب تنزيلها.")
+        for file in DOWNLOAD_DIR.glob(f"{file_id}.*"):
+            try:
+                file.unlink()
+            except Exception:
+                pass
 
-@bot.message_handler(func=lambda message: True)
-def process_video_link(message):
-    url = message.text.strip()
-    if not url.startswith("http"):
-        bot.reply_to(message, "⚠️ يرجى إرسال رابط صحيح يبدأ بـ http أو https.")
-        return
 
-    msg = bot.reply_to(message, "🔍 جاري تحليل الرابط واستخراج الدقات المتاحة...")
+# =========================================================
+# 🧹 تنظيف اسم الملف
+# =========================================================
+def safe_filename(name):
+
+    name = re.sub(r'[\\\\/:*?"<>|]+', "_", name)
+    name = name.strip()
+
+    if not name:
+        name = "video"
+
+    return name[:80]
+
+
+# =========================================================
+# 📦 الحصول على الحجم
+# =========================================================
+def get_file_size(path):
 
     try:
-        ydl_opts = {'quiet': True}
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
+        return os.path.getsize(path)
+    except:
+        return 0
 
-        formats = info.get('formats', [])
-        available_qualities = []
-        seen_heights = set()
 
-        for f in formats:
-            height = f.get('height')
-            vcodec = f.get('vcodec')
-            acodec = f.get('acodec')
+# =========================================================
+# 🤖 /start
+# =========================================================
+@bot.message_handler(commands=["start"])
+def send_welcome(message):
 
-            if height and vcodec != 'none' and acodec != 'none':
-                if height not in seen_heights:
-                    seen_heights.add(height)
-                    available_qualities.append((height, f.get('format_id')))
+    text = (
+        "🎬 أهلاً بك في *مُنزّل الفيديوهات الذكي*\\n\\n"
+        "أرسل رابط الفيديو وسأعرض لك الخيارات المتاحة:\\n\\n"
+        "🎥 فيديو مع صوت\\n"
+        "🎵 صوت فقط MP3\\n"
+        "📺 جودات مختلفة"
+    )
 
-        available_qualities.sort(key=lambda x: x[0], reverse=True)
+    bot.send_message(
+        message.chat.id,
+        text,
+        parse_mode="Markdown"
+    )
+
+
+# =========================================================
+# 🔗 استقبال الرابط
+# =========================================================
+@bot.message_handler(
+    func=lambda message:
+    message.text and
+    message.text.startswith(("http://", "https://"))
+)
+def process_video_link(message):
+
+    chat_id = message.chat.id
+    url = message.text.strip()
+
+    loading = bot.reply_to(
+        message,
+        "🔍 جاري تحليل الرابط...\\n"
+        "⏳ لحظات من فضلك"
+    )
+
+    try:
+
+        options = {
+            "quiet": True,
+            "no_warnings": True,
+            "noplaylist": True,
+        }
+
+        with yt_dlp.YoutubeDL(options) as ydl:
+
+            info = ydl.extract_info(
+                url,
+                download=False
+            )
+
+        user_sessions[chat_id] = {
+            "url": url,
+            "title": info.get("title", "فيديو"),
+            "thumbnail": info.get("thumbnail"),
+        }
+
+        title = info.get("title", "فيديو")
+        duration = info.get("duration")
+
+        duration_text = ""
+
+        if duration:
+            minutes = int(duration // 60)
+            seconds = int(duration % 60)
+            duration_text = f"\\n⏱ المدة: {minutes}:{seconds:02d}"
+
+        qualities = []
+
+        seen = set()
+
+        for f in info.get("formats", []):
+
+            height = f.get("height")
+            vcodec = f.get("vcodec")
+
+            if (
+                height and
+                vcodec and
+                vcodec != "none" and
+                height not in seen
+            ):
+
+                seen.add(height)
+                qualities.append(height)
+
+        qualities = sorted(
+            qualities,
+            reverse=True
+        )
 
         markup = InlineKeyboardMarkup()
-        if available_qualities:
-            row = []
-            for q_height, fmt_id in available_qualities:
-                row.append(InlineKeyboardButton(f"{q_height}p 🎥", callback_data=f"fmt_{fmt_id}"))
-                if len(row) == 2:
-                    markup.add(*row)
-                    row = []
-            if row:
-                markup.add(*row)
-        
-        markup.add(InlineKeyboardButton("أفضل جودة تلقائية 🌟", callback_data="best"))
 
-        user_urls[message.chat.id] = url
-        bot.edit_message_text("اختر الدقة المطلوبة للتنزيل:", chat_id=message.chat.id, message_id=msg.message_id, reply_markup=markup)
+        row = []
+
+        for height in qualities:
+
+            if height > 2160:
+                continue
+
+            row.append(
+                InlineKeyboardButton(
+                    f"🎥 {height}p",
+                    callback_data=f"video_{height}"
+                )
+            )
+
+            if len(row) == 2:
+                markup.add(*row)
+                row = []
+
+        if row:
+            markup.add(*row)
+
+        markup.add(
+            InlineKeyboardButton(
+                "🌟 أفضل جودة",
+                callback_data="video_best"
+            )
+        )
+
+        markup.add(
+            InlineKeyboardButton(
+                "🎵 صوت فقط MP3",
+                callback_data="audio"
+            )
+        )
+
+        text = (
+            f"🎬 *{title[:100]}*"
+            f"{duration_text}\\n\\n"
+            "اختر نوع التحميل:"
+        )
+
+        bot.edit_message_text(
+            text,
+            chat_id,
+            loading.message_id,
+            reply_markup=markup,
+            parse_mode="Markdown"
+        )
 
     except Exception as e:
-        bot.edit_message_text(f"❌ تعذر جلب معلومات الفيديو: {str(e)}", chat_id=message.chat.id, message_id=msg.message_id)
 
-@bot.callback_query_handler(func=lambda call: True)
+        bot.edit_message_text(
+            f"❌ تعذر تحليل الرابط:\\n\\n{str(e)[:1000]}",
+            chat_id,
+            loading.message_id
+        )
+
+
+# =========================================================
+# ❌ الروابط غير الصحيحة
+# =========================================================
+@bot.message_handler(func=lambda message: True)
+def invalid_message(message):
+
+    bot.reply_to(
+        message,
+        "⚠️ أرسل رابط فيديو يبدأ بـ http أو https."
+    )
+
+
+# =========================================================
+# 🎛️ أزرار التحميل
+# =========================================================
+@bot.callback_query_handler(
+    func=lambda call: True
+)
 def callback_download(call):
-    chat_id = call.message.chat.id
-    url = user_urls.get(chat_id)
 
-    if not url:
-        bot.answer_callback_query(call.id, "انتهت الجلسة، يرجى إرسال الرابط مجدداً.")
+    chat_id = call.message.chat.id
+    session = user_sessions.get(chat_id)
+
+    if not session:
+
+        bot.answer_callback_query(
+            call.id,
+            "❌ انتهت الجلسة، أرسل الرابط مرة أخرى."
+        )
         return
 
-    bot.edit_message_text("⏳ جاري تنزيل الفيديو بالدقة المختارة والإرسال...", chat_id=chat_id, message_id=call.message.message_id)
-
+    url = session["url"]
     data = call.data
-    if data == "best":
-        fmt_str = "best[ext=mp4]/bestvideo+bestaudio/best"
-    else:
-        fmt_id = data.replace("fmt_", "")
-        fmt_str = f"{fmt_id}/best[ext=mp4]/best"
 
-    file_path = f"tg_{chat_id}.mp4"
-    opts = {
-        'format': fmt_str,
-        'outtmpl': file_path,
-        'quiet': True,
-        'max_filesize': 50 * 1024 * 1024
-    }
+    bot.answer_callback_query(
+        call.id,
+        "⏳ جاري التحميل..."
+    )
 
     try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            ydl.download([url])
 
-        if os.path.exists(file_path):
-            with open(file_path, 'rb') as video:
-                bot.send_video(chat_id, video)
-            bot.delete_message(chat_id, call.message.message_id)
+        bot.edit_message_text(
+            "⏳ *جاري تجهيز الملف...*\\n\\n"
+            "📥 يتم تنزيل الفيديو الآن...",
+            chat_id,
+            call.message.message_id,
+            parse_mode="Markdown"
+        )
+
+        file_id = uuid.uuid4().hex
+
+        # =================================================
+        # 🎵 تحميل الصوت
+        # =================================================
+        if data == "audio":
+
+            output = DOWNLOAD_DIR / f"{file_id}.%(ext)s"
+
+            options = {
+                "format": "bestaudio/best",
+                "outtmpl": str(output),
+                "quiet": True,
+                "noplaylist": True,
+                "postprocessors": [
+                    {
+                        "key": "FFmpegExtractAudio",
+                        "preferredcodec": "mp3",
+                        "preferredquality": "192",
+                    }
+                ],
+            }
+
+            with yt_dlp.YoutubeDL(options) as ydl:
+                info = ydl.extract_info(
+                    url,
+                    download=True
+                )
+
+            files = list(
+                DOWNLOAD_DIR.glob(f"{file_id}.*")
+            )
+
+            if not files:
+                raise Exception(
+                    "لم يتم إنشاء ملف الصوت."
+                )
+
+            file_path = files[0]
+
+            if get_file_size(file_path) > MAX_FILE_SIZE:
+                raise Exception(
+                    "حجم الملف أكبر من الحد المسموح به في البوت."
+                )
+
+            title = safe_filename(
+                info.get("title", "audio")
+            )
+
+            final_name = f"{title}.mp3"
+
+            with open(file_path, "rb") as audio:
+
+                bot.send_audio(
+                    chat_id,
+                    audio,
+                    caption="🎵 تم تحميل الصوت بنجاح",
+                    title=title[:64]
+                )
+
+        # =================================================
+        # 🎥 تحميل الفيديو
+        # =================================================
         else:
-            bot.send_message(chat_id, "❌ لم يتم العثور على الملف بعد التنزيل.")
+
+            output = DOWNLOAD_DIR / f"{file_id}.%(ext)s"
+
+            if data == "video_best":
+
+                fmt = (
+                    "bestvideo[ext=mp4]+"
+                    "bestaudio[ext=m4a]/"
+                    "best[ext=mp4]/best"
+                )
+
+            else:
+
+                height = data.replace(
+                    "video_",
+                    ""
+                )
+
+                fmt = (
+                    f"bestvideo[height<={height}]"
+                    f"[ext=mp4]+"
+                    f"bestaudio[ext=m4a]/"
+                    f"best[height<={height}]"
+                    f"[ext=mp4]/best"
+                )
+
+            options = {
+                "format": fmt,
+                "merge_output_format": "mp4",
+                "outtmpl": str(output),
+                "quiet": True,
+                "noplaylist": True,
+            }
+
+            with yt_dlp.YoutubeDL(options) as ydl:
+
+                info = ydl.extract_info(
+                    url,
+                    download=True
+                )
+
+                prepared = Path(
+                    ydl.prepare_filename(info)
+                )
+
+            files = list(
+                DOWNLOAD_DIR.glob(f"{file_id}.*")
+            )
+
+            if prepared.exists():
+                file_path = prepared
+            elif files:
+                file_path = files[0]
+            else:
+                raise Exception(
+                    "لم يتم إنشاء ملف الفيديو."
+                )
+
+            # محاولة إيجاد MP4 بعد الدمج
+            mp4_files = list(
+                DOWNLOAD_DIR.glob(
+                    f"{file_id}*.mp4"
+                )
+            )
+
+            if mp4_files:
+                file_path = mp4_files[0]
+
+            if get_file_size(file_path) > MAX_FILE_SIZE:
+
+                bot.send_message(
+                    chat_id,
+                    "❌ الفيديو أكبر من الحد المسموح به للإرسال عبر البوت.\\n"
+                    "جرّب اختيار جودة أقل."
+                )
+
+                return
+
+            with open(file_path, "rb") as video:
+
+                bot.send_video(
+                    chat_id,
+                    video,
+                    supports_streaming=True,
+                    caption="🎬 تم تحميل الفيديو بنجاح"
+                )
+
+        try:
+            bot.delete_message(
+                chat_id,
+                call.message.message_id
+            )
+        except:
+            pass
 
     except Exception as e:
-        bot.send_message(chat_id, f"❌ تعذر التنزيل: {str(e)}")
+
+        bot.send_message(
+            chat_id,
+            "❌ *تعذر تحميل الملف*\\n\\n"
+            f"`{str(e)[:1500]}`",
+            parse_mode="Markdown"
+        )
+
     finally:
-        if os.path.exists(file_path):
-            try: os.remove(file_path)
-            except: pass
 
-# ----------------------------------------------------
-# 3. تشغيل البوت (تم إصلاح المعامل هنا)
-# ----------------------------------------------------
+        # تنظيف الملفات المؤقتة
+        for file in DOWNLOAD_DIR.glob(
+            f"{file_id}.*"
+        ):
+            try:
+                file.unlink()
+            except:
+                pass
+
+
+# =========================================================
+# 🧹 تنظيف الملفات القديمة
+# =========================================================
+def cleanup_old_files():
+
+    for file in DOWNLOAD_DIR.iterdir():
+
+        try:
+
+            if file.is_file():
+
+                age = (
+                    __import__("time").time()
+                    - file.stat().st_mtime
+                )
+
+                if age > 3600:
+                    file.unlink()
+
+        except:
+            pass
+
+
+# =========================================================
+# 🤖 تشغيل البوت
+# =========================================================
 def start_bot():
-    try:
-        print("🤖 جاري تشغيل بوت التليجرام...")
-        bot.infinity_polling(skip_pending=True, timeout=20, long_polling_timeout=10)
-    except Exception as e:
-        print(f"❌ خطأ في تشغيل البوت: {e}")
 
-bot_thread = threading.Thread(target=start_bot, daemon=True)
-bot_thread.start()
+    print("🤖 تشغيل بوت Telegram...")
 
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host='0.0.0.0', port=port)
+    while True:
 
+        try:
+
+            bot.infinity_polling(
+                skip_pending=True,
+                timeout=30,
+                long_polling_timeout=30
+            )
+
+        except Exception as e:
+
+            print(
+                f"❌ خطأ في البوت: {e}"
+            )
+
+            import time
+            time.sleep(5)
+
+
+# =========================================================
+# 🚀 تشغيل
+# =========================================================
+if __name__ == "__main__":
+
+    if BOT_TOKEN == "8294576614:AAFQeLslZLrYyM4TRoP0kyQ_9qwBk0ztrj0":
+
+        print(
+            "⚠️ ضع توكن البوت في المتغير BOT_TOKEN أولاً."
+        )
+
+    else:
+
+        bot_thread = threading.Thread(
+            target=start_bot,
+            daemon=True
+        )
+
+        bot_thread.start()
+
+    port = int(
+        os.environ.get(
+            "PORT",
+            8080
+        )
+    )
+
+    app.run(
+        host="0.0.0.0",
+        port=port
+                                         )
