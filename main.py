@@ -329,7 +329,7 @@ button:hover {
                 <strong>
                     🎵 صوت
                 </strong>
-                MP3
+                صوت مباشر
             </div>
 
             <div class="feature">
@@ -367,125 +367,54 @@ button:hover {
 # =========================================================
 @app.route("/")
 def index():
-
-    return render_template_string(
-        HTML_LAYOUT
-    )
+    return render_template_string(HTML_LAYOUT)
 
 
 # =========================================================
-# 🌐 تحميل من الموقع
+# 🌐 تحميل من الموقع (بدون دمج / بدون ffmpeg)
 # =========================================================
-@app.route(
-    "/download-web",
-    methods=["POST"]
-)
+@app.route("/download-web", methods=["POST"])
 def web_download():
+    url = request.form.get("url", "").strip()
 
-    url = request.form.get(
-        "url",
-        ""
-    ).strip()
-
-    if not url.startswith(
-        ("http://", "https://")
-    ):
-
+    if not url.startswith(("http://", "https://")):
         return "❌ الرابط غير صحيح"
 
-
     file_id = uuid.uuid4().hex
-
-    output = (
-        DOWNLOAD_DIR /
-        f"{file_id}.%(ext)s"
-    )
-
+    output = DOWNLOAD_DIR / f"{file_id}.%(ext)s"
 
     try:
-
         options = {
-
-            "format":
-                "bestvideo+bestaudio/best",
-
-            "merge_output_format":
-                "mp4",
-
-            "outtmpl":
-                str(output),
-
-            "quiet":
-                True,
-
-            "noplaylist":
-                True
+            "format": "best[ext=mp4]/best",
+            "outtmpl": str(output),
+            "quiet": True,
+            "noplaylist": True,
         }
 
+        with yt_dlp.YoutubeDL(options) as ydl:
+            info = ydl.extract_info(url, download=True)
+            prepared = Path(ydl.prepare_filename(info))
 
-        with yt_dlp.YoutubeDL(
-            options
-        ) as ydl:
-
-            info = ydl.extract_info(
-                url,
-                download=True
-            )
-
-            prepared = Path(
-                ydl.prepare_filename(
-                    info
-                )
-            )
-
-
-        files = list(
-            DOWNLOAD_DIR.glob(
-                f"{file_id}.*"
-            )
-        )
-
+        files = list(DOWNLOAD_DIR.glob(f"{file_id}.*"))
 
         if prepared.exists():
-
             final_path = prepared
-
         elif files:
-
             final_path = files[0]
-
         else:
-
-            return (
-                "❌ لم يتم إنشاء الملف"
-            )
-
+            return "❌ لم يتم إنشاء الملف"
 
         return send_file(
-            final_path,
-            as_attachment=True,
-            download_name=final_path.name
+            final_path, as_attachment=True, download_name=final_path.name
         )
-
 
     except Exception as e:
-
-        return (
-            "❌ حدث خطأ أثناء التحميل:"
-            "<br><br>"
-            f"{str(e)}"
-        )
-
+        return f"❌ حدث خطأ أثناء التحميل:<br><br>{str(e)}"
 
     finally:
-
-        for file in DOWNLOAD_DIR.glob(
-            f"{file_id}.*"
-        ):
-
+        for file in DOWNLOAD_DIR.glob(f"{file_id}.*"):
             try:
                 file.unlink()
-
             except:
                 pass
 
@@ -494,18 +423,10 @@ def web_download():
 # 🧹 تنظيف اسم الملف
 # =========================================================
 def safe_filename(name):
-
-    name = re.sub(
-        r'[\\\\/:*?"<>|]+',
-        "_",
-        name
-    )
-
+    name = re.sub(r'[\\\\/:*?"<>|]+', "_", name)
     name = name.strip()
-
     if not name:
         name = "video"
-
     return name[:80]
 
 
@@ -513,633 +434,265 @@ def safe_filename(name):
 # 📦 حجم الملف
 # =========================================================
 def get_file_size(path):
-
     try:
-
-        return os.path.getsize(
-            path
-        )
-
+        return os.path.getsize(path)
     except:
-
         return 0
 
 
 # =========================================================
 # 🤖 أمر Start
 # =========================================================
-@bot.message_handler(
-    commands=["start"]
-)
+@bot.message_handler(commands=["start"])
 def send_welcome(message):
-
     text = (
-        "🎬 أهلاً بك في "
-        "*مُنزّل الفيديوهات الذكي*\n\n"
-
-        "أرسل رابط الفيديو وسأعرض لك "
-        "خيارات التحميل.\n\n"
-
+        "🎬 أهلاً بك في *مُنزّل الفيديوهات الذكي*\n\n"
+        "أرسل رابط الفيديو وسأعرض لك خيارات التحميل.\n\n"
         "🎥 فيديو مع صوت\n"
-        "🎵 صوت فقط MP3\n"
+        "🎵 صوت مباشر\n"
         "📺 جودات مختلفة"
     )
 
-
-    bot.send_message(
-        message.chat.id,
-        text,
-        parse_mode="Markdown"
-    )
+    bot.send_message(message.chat.id, text, parse_mode="Markdown")
 
 
 # =========================================================
 # 🔗 استقبال الرابط
 # =========================================================
 @bot.message_handler(
-    func=lambda message:
-        message.text
-        and message.text.startswith(
-            ("http://", "https://")
-        )
+    func=lambda message: message.text
+    and message.text.startswith(("http://", "https://"))
 )
 def process_video_link(message):
-
     chat_id = message.chat.id
-
     url = message.text.strip()
 
-
     loading = bot.reply_to(
-        message,
-        "🔍 جاري تحليل الرابط...\n"
-        "⏳ انتظر قليلاً"
+        message, "🔍 جاري تحليل الرابط...\n⏳ انتظر قليلاً"
     )
 
-
     try:
+        options = {"quiet": True, "no_warnings": True, "noplaylist": True}
 
-        options = {
+        with yt_dlp.YoutubeDL(options) as ydl:
+            info = ydl.extract_info(url, download=False)
 
-            "quiet":
-                True,
-
-            "no_warnings":
-                True,
-
-            "noplaylist":
-                True
+        user_sessions[chat_id] = {
+            "url": url,
+            "title": info.get("title", "فيديو"),
         }
 
-
-        with yt_dlp.YoutubeDL(
-            options
-        ) as ydl:
-
-            info = ydl.extract_info(
-                url,
-                download=False
-            )
-
-
-        user_sessions[
-            chat_id
-        ] = {
-
-            "url":
-                url,
-
-            "title":
-                info.get(
-                    "title",
-                    "فيديو"
-                )
-        }
-
-
-        title = info.get(
-            "title",
-            "فيديو"
-        )
-
-
-        duration = info.get(
-            "duration"
-        )
-
-
+        title = info.get("title", "فيديو")
+        duration = info.get("duration")
         duration_text = ""
 
-
         if duration:
+            minutes = int(duration // 60)
+            seconds = int(duration % 60)
+            duration_text = f"\n⏱ المدة: {minutes}:{seconds:02d}"
 
-            minutes = int(
-                duration // 60
-            )
-
-            seconds = int(
-                duration % 60
-            )
-
-            duration_text = (
-                f"\n⏱ المدة: "
-                f"{minutes}:{seconds:02d}"
-            )
-
-
-        # -----------------------------------------
-        # استخراج الجودات
-        # -----------------------------------------
         qualities = []
-
         seen = set()
 
+        for f in info.get("formats", []):
+            height = f.get("height")
+            vcodec = f.get("vcodec")
 
-        for f in info.get(
-            "formats",
-            []
-        ):
+            if height and vcodec and vcodec != "none" and height not in seen:
+                seen.add(height)
+                qualities.append(height)
 
-            height = f.get(
-                "height"
-            )
-
-            vcodec = f.get(
-                "vcodec"
-            )
-
-
-            if (
-                height
-                and vcodec
-                and vcodec != "none"
-                and height not in seen
-            ):
-
-                seen.add(
-                    height
-                )
-
-                qualities.append(
-                    height
-                )
-
-
-        qualities = sorted(
-            qualities,
-            reverse=True
-        )
-
+        qualities = sorted(qualities, reverse=True)
 
         markup = InlineKeyboardMarkup()
-
-
         row = []
 
-
         for height in qualities:
-
             if height > 2160:
                 continue
 
-
             row.append(
                 InlineKeyboardButton(
-                    f"🎥 {height}p",
-                    callback_data=
-                        f"video_{height}"
+                    f"🎥 {height}p", callback_data=f"video_{height}"
                 )
             )
-
 
             if len(row) == 2:
-
-                markup.add(
-                    *row
-                )
-
+                markup.add(*row)
                 row = []
 
-
         if row:
-
-            markup.add(
-                *row
-            )
-
+            markup.add(*row)
 
         markup.add(
             InlineKeyboardButton(
-                "🌟 أفضل جودة",
-                callback_data=
-                    "video_best"
+                "🌟 أفضل جودة متاحة", callback_data="video_best"
             )
         )
-
 
         markup.add(
-            InlineKeyboardButton(
-                "🎵 صوت فقط MP3",
-                callback_data=
-                    "audio"
-            )
+            InlineKeyboardButton("🎵 صوت فقط", callback_data="audio")
         )
 
-
-        text = (
-            f"🎬 *{title[:100]}*"
-            f"{duration_text}\n\n"
-            "اختر نوع التحميل:"
-        )
-
+        text = f"🎬 *{title[:100]}*{duration_text}\n\nاختر نوع التحميل:"
 
         bot.edit_message_text(
             text,
-
             chat_id,
-
             loading.message_id,
-
             reply_markup=markup,
-
-            parse_mode="Markdown"
+            parse_mode="Markdown",
         )
 
-
     except Exception as e:
-
         bot.edit_message_text(
-
-            "❌ تعذر تحليل الرابط:\n\n"
-            f"{str(e)[:1000]}",
-
+            f"❌ تعذر تحليل الرابط:\n\n{str(e)[:1000]}",
             chat_id,
-
-            loading.message_id
+            loading.message_id,
         )
 
 
 # =========================================================
 # ❌ رسالة غير صالحة
 # =========================================================
-@bot.message_handler(
-    func=lambda message: True
-)
+@bot.message_handler(func=lambda message: True)
 def invalid_message(message):
-
     bot.reply_to(
-        message,
-        "⚠️ أرسل رابط فيديو صحيح يبدأ بـ http أو https."
+        message, "⚠️ أرسل رابط فيديو صحيح يبدأ بـ http أو https."
     )
 
 
 # =========================================================
 # 🎛️ أزرار التحميل
 # =========================================================
-@bot.callback_query_handler(
-    func=lambda call: True
-)
+@bot.callback_query_handler(func=lambda call: True)
 def callback_download(call):
-
     chat_id = call.message.chat.id
-
-
-    session = user_sessions.get(
-        chat_id
-    )
-
+    session = user_sessions.get(chat_id)
 
     if not session:
-
         bot.answer_callback_query(
-            call.id,
-            "❌ انتهت الجلسة، أرسل الرابط مرة أخرى."
+            call.id, "❌ انتهت الجلسة، أرسل الرابط مرة أخرى."
         )
-
         return
 
-
     url = session["url"]
-
     data = call.data
 
-
-    bot.answer_callback_query(
-        call.id,
-        "⏳ جاري التحميل..."
-    )
-
-
+    bot.answer_callback_query(call.id, "⏳ جاري التحميل...")
     file_id = uuid.uuid4().hex
 
-
     try:
-
         bot.edit_message_text(
-
-            "⏳ *جاري تجهيز الملف...*\n\n"
-            "📥 يتم تنزيل الملف الآن...",
-
+            "⏳ *جاري تجهيز الملف...*\n\n📥 يتم تنزيل الملف الآن...",
             chat_id,
-
             call.message.message_id,
-
-            parse_mode="Markdown"
+            parse_mode="Markdown",
         )
 
-
         # =================================================
-        # 🎵 الصوت MP3
+        # 🎵 الصوت (تحميل مباشر بدون معالجة ffmpeg)
         # =================================================
         if data == "audio":
-
-            output = (
-                DOWNLOAD_DIR /
-                f"{file_id}.%(ext)s"
-            )
-
+            output = DOWNLOAD_DIR / f"{file_id}.%(ext)s"
 
             options = {
-
-                "format":
-                    "bestaudio/best",
-
-                "outtmpl":
-                    str(output),
-
-                "quiet":
-                    True,
-
-                "noplaylist":
-                    True,
-
-                "postprocessors": [
-
-                    {
-                        "key":
-                            "FFmpegExtractAudio",
-
-                        "preferredcodec":
-                            "mp3",
-
-                        "preferredquality":
-                            "192"
-                    }
-                ]
+                "format": "bestaudio/best",
+                "outtmpl": str(output),
+                "quiet": True,
+                "noplaylist": True,
             }
 
+            with yt_dlp.YoutubeDL(options) as ydl:
+                info = ydl.extract_info(url, download=True)
 
-            with yt_dlp.YoutubeDL(
-                options
-            ) as ydl:
-
-                info = ydl.extract_info(
-                    url,
-                    download=True
-                )
-
-
-            files = list(
-                DOWNLOAD_DIR.glob(
-                    f"{file_id}.*"
-                )
-            )
-
+            files = list(DOWNLOAD_DIR.glob(f"{file_id}.*"))
 
             if not files:
-
-                raise Exception(
-                    "لم يتم إنشاء ملف الصوت."
-                )
-
+                raise Exception("لم يتم إنشاء ملف الصوت.")
 
             file_path = files[0]
 
+            if get_file_size(file_path) > MAX_FILE_SIZE:
+                raise Exception("حجم الملف أكبر من الحد المسموح.")
 
-            if (
-                get_file_size(
-                    file_path
-                ) > MAX_FILE_SIZE
-            ):
+            title = safe_filename(info.get("title", "audio"))
 
-                raise Exception(
-                    "حجم الملف أكبر من الحد المسموح."
-                )
-
-
-            title = safe_filename(
-                info.get(
-                    "title",
-                    "audio"
-                )
-            )
-
-
-            with open(
-                file_path,
-                "rb"
-            ) as audio:
-
+            with open(file_path, "rb") as audio:
                 bot.send_audio(
-
                     chat_id,
-
                     audio,
-
-                    caption=
-                        "🎵 تم تحميل الصوت بنجاح",
-
-                    title=
-                        title[:64]
+                    caption="🎵 تم تحميل الصوت بنجاح",
+                    title=title[:64],
                 )
-
 
         # =================================================
-        # 🎬 الفيديو
+        # 🎬 الفيديو (صيغة مدموجة جاهزة دون حاجة لـ ffmpeg)
         # =================================================
         else:
-
-            output = (
-                DOWNLOAD_DIR /
-                f"{file_id}.%(ext)s"
-            )
-
+            output = DOWNLOAD_DIR / f"{file_id}.%(ext)s"
 
             if data == "video_best":
-
-                fmt = (
-                    "bestvideo[ext=mp4]+"
-                    "bestaudio[ext=m4a]/"
-                    "best[ext=mp4]/best"
-                )
-
-
+                fmt = "best[ext=mp4]/best"
             else:
-
-                height = data.replace(
-                    "video_",
-                    ""
-                )
-
-
-                fmt = (
-
-                    f"bestvideo"
-                    f"[height<={height}]"
-                    f"[ext=mp4]+"
-
-                    f"bestaudio"
-                    f"[ext=m4a]/"
-
-                    f"best"
-                    f"[height<={height}]"
-                    f"[ext=mp4]/"
-
-                    "best"
-                )
-
+                height = data.replace("video_", "")
+                fmt = f"best[height<={height}][ext=mp4]/best[height<={height}]/best"
 
             options = {
-
-                "format":
-                    fmt,
-
-                "merge_output_format":
-                    "mp4",
-
-                "outtmpl":
-                    str(output),
-
-                "quiet":
-                    True,
-
-                "noplaylist":
-                    True
+                "format": fmt,
+                "outtmpl": str(output),
+                "quiet": True,
+                "noplaylist": True,
             }
 
+            with yt_dlp.YoutubeDL(options) as ydl:
+                info = ydl.extract_info(url, download=True)
+                prepared = Path(ydl.prepare_filename(info))
 
-            with yt_dlp.YoutubeDL(
-                options
-            ) as ydl:
-
-                info = ydl.extract_info(
-                    url,
-                    download=True
-                )
-
-                prepared = Path(
-                    ydl.prepare_filename(
-                        info
-                    )
-                )
-
-
-            files = list(
-                DOWNLOAD_DIR.glob(
-                    f"{file_id}.*"
-                )
-            )
-
-
-            mp4_files = list(
-                DOWNLOAD_DIR.glob(
-                    f"{file_id}*.mp4"
-                )
-            )
-
+            files = list(DOWNLOAD_DIR.glob(f"{file_id}.*"))
+            mp4_files = list(DOWNLOAD_DIR.glob(f"{file_id}*.mp4"))
 
             if mp4_files:
-
                 file_path = mp4_files[0]
-
             elif prepared.exists():
-
                 file_path = prepared
-
             elif files:
-
                 file_path = files[0]
-
             else:
+                raise Exception("لم يتم إنشاء ملف الفيديو.")
 
-                raise Exception(
-                    "لم يتم إنشاء ملف الفيديو."
-                )
-
-
-            if (
-                get_file_size(
-                    file_path
-                ) > MAX_FILE_SIZE
-            ):
-
+            if get_file_size(file_path) > MAX_FILE_SIZE:
                 bot.send_message(
-
                     chat_id,
-
-                    "❌ حجم الفيديو أكبر من الحد المسموح.\n"
-                    "جرّب جودة أقل."
+                    "❌ حجم الفيديو أكبر من الحد المسموح.\nجرّب جودة أقل.",
                 )
-
                 return
 
-
-            with open(
-                file_path,
-                "rb"
-            ) as video:
-
+            with open(file_path, "rb") as video:
                 bot.send_video(
-
                     chat_id,
-
                     video,
-
                     supports_streaming=True,
-
-                    caption=
-                        "🎬 تم تحميل الفيديو بنجاح"
+                    caption="🎬 تم تحميل الفيديو بنجاح",
                 )
 
-
         try:
-
-            bot.delete_message(
-                chat_id,
-                call.message.message_id
-            )
-
+            bot.delete_message(chat_id, call.message.message_id)
         except:
-
             pass
 
-
     except Exception as e:
-
         bot.send_message(
-
             chat_id,
-
-            "❌ *تعذر تحميل الملف*\n\n"
-            f"`{str(e)[:1500]}`",
-
-            parse_mode="Markdown"
+            "❌ *تعذر تحميل الملف*\n\n" f"`{str(e)[:1500]}`",
+            parse_mode="Markdown",
         )
 
-
     finally:
-
-        # تنظيف الملفات
-        for file in DOWNLOAD_DIR.glob(
-            f"{file_id}.*"
-        ):
-
+        for file in DOWNLOAD_DIR.glob(f"{file_id}.*"):
             try:
-
                 file.unlink()
-
             except:
-
                 pass
 
 
@@ -1147,40 +700,22 @@ def callback_download(call):
 # 🧹 تنظيف الملفات القديمة
 # =========================================================
 def cleanup_old_files():
-
     while True:
-
         try:
-
             current_time = time.time()
-
-
             for file in DOWNLOAD_DIR.iterdir():
-
                 if not file.is_file():
                     continue
 
-
-                age = (
-                    current_time
-                    - file.stat().st_mtime
-                )
-
+                age = current_time - file.stat().st_mtime
 
                 if age > 3600:
-
                     try:
                         file.unlink()
                     except:
                         pass
-
-
         except Exception as e:
-
-            print(
-                f"⚠️ خطأ في التنظيف: {e}"
-            )
-
+            print(f"⚠️ خطأ في التنظيف: {e}")
 
         time.sleep(600)
 
@@ -1189,32 +724,15 @@ def cleanup_old_files():
 # 🤖 تشغيل Telegram
 # =========================================================
 def start_bot():
-
-    print(
-        "🤖 جاري تشغيل بوت Telegram..."
-    )
-
+    print("🤖 جاري تشغيل بوت Telegram...")
 
     while True:
-
         try:
-
             bot.infinity_polling(
-
-                skip_pending=True,
-
-                timeout=30,
-
-                long_polling_timeout=30
+                skip_pending=True, timeout=30, long_polling_timeout=30
             )
-
-
         except Exception as e:
-
-            print(
-                f"❌ خطأ في البوت: {e}"
-            )
-
+            print(f"❌ خطأ في البوت: {e}")
             time.sleep(5)
 
 
@@ -1222,46 +740,15 @@ def start_bot():
 # 🚀 التشغيل
 # =========================================================
 if __name__ == "__main__":
-
-    if (
-        BOT_TOKEN == "ضع_التوكن_هنا"
-        or not BOT_TOKEN
-    ):
-
-        print(
-            "⚠️ لم يتم وضع توكن البوت."
-        )
-
+    if BOT_TOKEN == "ضع_التوكن_هنا" or not BOT_TOKEN:
+        print("⚠️ لم يتم وضع توكن البوت.")
     else:
-
-        bot_thread = threading.Thread(
-            target=start_bot,
-            daemon=True
-        )
-
+        bot_thread = threading.Thread(target=start_bot, daemon=True)
         bot_thread.start()
 
-
-        cleanup_thread = threading.Thread(
-            target=cleanup_old_files,
-            daemon=True
-        )
-
+        cleanup_thread = threading.Thread(target=cleanup_old_files, daemon=True)
         cleanup_thread.start()
 
-
-    port = int(
-        os.environ.get(
-            "PORT",
-            8080
-        )
-    )
-
-
-    app.run(
-
-        host="0.0.0.0",
-
-        port=port
-    )
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
 
